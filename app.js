@@ -930,7 +930,7 @@ function renderExamQuestion() {
         <input type="number" id="exam-answer-input" class="exam-input" placeholder="Deine Antwort..." onkeydown="if(event.key==='Enter')submitExamAnswerText()">
         ${q.unit ? `<span class="exam-unit">${q.unit}</span>` : ''}
       </div>
-      <small class="exam-hint">💡 Tipp: ${q.hint}</small>
+      <small class="exam-hint"></small>
       <div style="margin-top:1rem">
         <button id="exam-submit-btn" onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
       </div>
@@ -942,7 +942,6 @@ function renderExamQuestion() {
       <div class="exam-input-row">
         <input type="text" id="exam-answer-input" class="exam-input" placeholder="Deine Antwort..." onkeydown="if(event.key==='Enter')submitExamAnswerText()">
       </div>
-      <small class="exam-hint">💡 Tipp: ${q.hint}</small>
       <div style="margin-top:1rem">
         <button id="exam-submit-btn" onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
       </div>
