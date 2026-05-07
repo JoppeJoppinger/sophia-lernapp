@@ -1186,12 +1186,7 @@ function unlockGame(seconds) {
 // ========================
 document.addEventListener('DOMContentLoaded', () => {
   // ---- Chat-Verlauf wiederherstellen ----
-  try {
-    const savedHtml = sessionStorage.getItem('chat_html');
-    if (savedHtml) {
-      document.getElementById('chat-messages').innerHTML = savedHtml;
-    }
-  } catch(e) {}
+  restoreChatState();
 
   // ---- Navigation wiederherstellen ----
   let restored = false;
@@ -2006,16 +2001,26 @@ function animWurfPhys(timestamp) {
 const CHAT_API = `http://${location.hostname || '192.168.2.38'}:8767/chat`;
 const chatHistory = []; // Gesprächsverlauf für Kontext
 
-// Chat-Verlauf aus sessionStorage wiederherstellen
-(function restoreChatHistory() {
+/** Speichert Chat-HTML + History in sessionStorage */
+function saveChatState() {
   try {
-    const saved = sessionStorage.getItem('chat_history');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      chatHistory.push(...parsed);
-    }
+    sessionStorage.setItem('chat_html',     document.getElementById('chat-messages').innerHTML);
+    sessionStorage.setItem('chat_history',  JSON.stringify(chatHistory));
   } catch(e) {}
-})();
+}
+
+/** Stellt Chat beim Seitenstart wieder her (wird aus DOMContentLoaded aufgerufen) */
+function restoreChatState() {
+  try {
+    const html = sessionStorage.getItem('chat_html');
+    if (html) {
+      document.getElementById('chat-messages').innerHTML = html;
+      document.getElementById('chat-messages').scrollTop = 999999;
+    }
+    const hist = sessionStorage.getItem('chat_history');
+    if (hist) chatHistory.push(...JSON.parse(hist));
+  } catch(e) {}
+}
 
 function toggleChat() {
   const win = document.getElementById('chat-window');
@@ -2073,14 +2078,12 @@ async function sendChat() {
     chatHistory.push({ role: 'user', content: message });
     chatHistory.push({ role: 'assistant', content: data.response });
     if (chatHistory.length > 10) chatHistory.splice(0, 2);
-    // History + Chat-HTML persistieren
-    sessionStorage.setItem('chat_history', JSON.stringify(chatHistory));
-    sessionStorage.setItem('chat_html', document.getElementById('chat-messages').innerHTML);
 
     const botDiv = document.createElement('div');
     botDiv.className = data.forwarded ? 'msg bot forwarded' : 'msg bot';
     botDiv.innerHTML = `<div class="sender">🎓 Schul-Assistentin</div>${formatBotMessage(data.response)}`;
     msgBox.appendChild(botDiv);
+    saveChatState(); // NACH Append speichern
   } catch (e) {
     typingDiv.remove();
     console.error('Chat-Fehler:', e, 'URL:', CHAT_API);
