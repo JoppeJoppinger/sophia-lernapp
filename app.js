@@ -929,7 +929,7 @@ function renderExamQuestion() {
       </div>
       <small class="exam-hint">💡 Tipp: ${q.hint}</small>
       <div style="margin-top:1rem">
-        <button onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
+        <button id="exam-submit-btn" onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
       </div>
     `;
   } else {
@@ -941,7 +941,7 @@ function renderExamQuestion() {
       </div>
       <small class="exam-hint">💡 Tipp: ${q.hint}</small>
       <div style="margin-top:1rem">
-        <button onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
+        <button id="exam-submit-btn" onclick="submitExamAnswerText()" style="background:${s.color};color:#000">Prüfen ✓</button>
       </div>
     `;
   }
@@ -1000,7 +1000,7 @@ function submitExamAnswer(chosen) {
 /**
  * Prüft Text/Zahleingabe
  */
-function submitExamAnswerText() {
+async function submitExamAnswerText() {
   const { topics, currentTopicIdx, currentQIdx } = examState;
   const topic = topics[currentTopicIdx];
   const q = topic.questions[currentQIdx];
@@ -1011,35 +1011,61 @@ function submitExamAnswerText() {
   const raw = inputEl.value.trim();
   if (!raw) return;
 
+  inputEl.disabled = true;
+  document.querySelectorAll('#exam-submit-btn').forEach(b => b.disabled = true);
+
   let correct = false;
+  let feedbackText = '';
 
   if (q.type === 'number') {
     // Numerischer Vergleich mit Toleranz ±0.01
     const userVal = parseFloat(raw.replace(',', '.'));
-    const solVal = parseFloat(String(q.solution).replace(',', '.'));
+    const solVal  = parseFloat(String(q.solution).replace(',', '.'));
     correct = !isNaN(userVal) && Math.abs(userVal - solVal) <= 0.01;
-  } else {
-    // Freitext: case-insensitive, Synonyme akzeptieren
-    const normalizedUser = raw.toLowerCase().trim();
-    const normalizedSol = String(q.solution).toLowerCase().trim();
-    const synonyms = (q.synonyms || []).map(s => s.toLowerCase().trim());
-    correct = normalizedUser === normalizedSol
-      || synonyms.some(syn => normalizedUser.includes(syn) || syn.includes(normalizedUser))
-      || normalizedSol.includes(normalizedUser) && normalizedUser.length >= 3;
-  }
+    feedbackText = correct ? '' : `Richtige Antwort: ${q.solution}${q.unit ? ' ' + q.unit : ''}`;
+    showExamFeedback(correct, feedbackText, q, s, topic, raw);
 
+  } else {
+    // Freitext → KI-Bewertung
+    const fb = document.getElementById('exam-feedback');
+    fb.style.display = 'block';
+    fb.innerHTML = '<span style="color:#888">🤔 KI prüft deine Antwort...</span>';
+
+    try {
+      const resp = await fetch(`http://${location.hostname}:8767/check-answer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          question:   q.problem,
+          solution:   String(q.solution),
+          userAnswer: raw,
+          subject:    SUBJECTS[examState.subjectKey]?.name || 'Schule'
+        })
+      });
+      const data = await resp.json();
+      correct = data.correct;
+      feedbackText = data.correct ? (data.feedback || '') : `${data.feedback || ''} — Musterlösung: ${q.solution}`;
+    } catch (e) {
+      // Netzwerkfehler → statischer Fallback
+      const norm = raw.toLowerCase().trim();
+      const sol  = String(q.solution).toLowerCase().trim();
+      const syns = (q.synonyms || []).map(x => x.toLowerCase());
+      correct = norm === sol || syns.some(sy => norm.includes(sy) || sy.includes(norm)) || (sol.includes(norm) && norm.length >= 3);
+      feedbackText = correct ? '' : `Musterlösung: ${q.solution}`;
+    }
+    showExamFeedback(correct, feedbackText, q, s, topic, raw);
+  }
+}
+
+function showExamFeedback(correct, feedbackText, q, s, topic, raw) {
   if (correct) topic.score++;
   topic.answered.push({ correct, userAnswer: raw });
 
-  inputEl.disabled = true;
-
-  // Feedback anzeigen
   const fb = document.getElementById('exam-feedback');
   fb.style.display = 'block';
   fb.innerHTML = correct
-    ? `<div class="exam-feedback-correct">✅ Richtig!</div>`
-    : `<div class="exam-feedback-wrong">❌ Falsch! Lösung: <strong>${q.solution}${q.unit ? ' ' + q.unit : ''}</strong></div>`;
-
+    ? `<div class="exam-feedback-correct">✅ Richtig!${feedbackText ? ' ' + feedbackText : ''}</div>`
+    : `<div class="exam-feedback-wrong">❌ Leider falsch. ${feedbackText}</div>`;
   fb.innerHTML += `<button onclick="nextExamQuestion()" style="margin-top:.8rem;background:${s.color};color:#000">Weiter →</button>`;
 }
 

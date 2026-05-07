@@ -151,6 +151,75 @@ def get_pending():
             pass
     return jsonify([])
 
+@app.route('/check-answer', methods=['POST'])
+def check_answer():
+    """KI bewertet eine Freitext-Antwort auf eine Schulaufgabe."""
+    data    = request.json or {}
+    question  = (data.get('question') or '').strip()
+    solution  = (data.get('solution') or '').strip()
+    user_ans  = (data.get('userAnswer') or '').strip()
+    subject   = (data.get('subject') or 'Schule').strip()
+
+    if not question or not user_ans:
+        return jsonify({'error': 'Fehlende Parameter'}), 400
+
+    prompt = f"""Du bist ein Schullehrer für bayerisches Gymnasium Klasse 8 und korrigierst eine Schulaufgabe.
+
+Fach: {subject}
+Frage: {question}
+Musterlösung: {solution}
+Antwort der Schülerin: {user_ans}
+
+Beurteile ob die Antwort inhaltlich richtig ist. Kleine Rechtschreibfehler oder andere Formulierungen sind in Ordnung, solange der Kern stimmt.
+
+Antworte NUR mit diesem JSON-Format (kein Text davor oder danach):
+{{"correct": true/false, "feedback": "kurze Erklärung auf Deutsch (max. 1 Satz)"}}"""
+
+    token = get_token()
+    if not token:
+        # Fallback: statischer Vergleich
+        c = user_ans.lower().strip() in solution.lower()
+        return jsonify({'correct': c, 'feedback': 'Automatische Prüfung (KI nicht verfügbar)', 'fallback': True})
+
+    messages = [{'role': 'user', 'content': prompt}]
+    payload = json.dumps({
+        'model': 'claude-haiku-4.5',
+        'messages': messages,
+        'max_tokens': 150,
+        'temperature': 0.1,
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        COPILOT_URL,
+        data=payload,
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type':  'application/json',
+            'Copilot-Integration-Id': 'vscode-chat',
+        },
+        method='POST'
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read().decode('utf-8'))
+            content = raw['choices'][0]['message']['content'].strip()
+            # JSON aus Antwort extrahieren
+            import re
+            m = re.search(r'\{.*?\}', content, re.DOTALL)
+            if m:
+                result = json.loads(m.group(0))
+                return jsonify({
+                    'correct':  bool(result.get('correct', False)),
+                    'feedback': result.get('feedback', ''),
+                })
+            # Fallback wenn KI kein JSON liefert
+            return jsonify({'correct': False, 'feedback': content[:120]})
+    except Exception as e:
+        print(f'check-answer Fehler: {e}')
+        c = user_ans.lower().strip() in solution.lower()
+        return jsonify({'correct': c, 'feedback': 'Automatische Prüfung', 'fallback': True})
+
+
 @app.route('/health', methods=['GET'])
 def health():
     tok = get_token()
