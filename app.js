@@ -19,6 +19,7 @@ function saveProgress(key, val) {
 // ========================
 function showHome() {
   currentSubject = null; currentTopic = null; currentView = 'home';
+  sessionStorage.setItem('nav_state', JSON.stringify({view:'home'}));
   updateBreadcrumb([]);
   const grid = Object.entries(SUBJECTS).map(([key, s]) => {
     const done = progress[key+'_done'] || 0;
@@ -38,6 +39,7 @@ function showHome() {
 function showSubject(key) {
   currentSubject = key;
   currentView = 'subject';
+  sessionStorage.setItem('nav_state', JSON.stringify({view:'subject', subject:key}));
   const s = SUBJECTS[key];
   updateBreadcrumb([{label: s.name, fn: `showSubject('${key}')`}]);
 
@@ -68,6 +70,7 @@ function showTopic(subjectKey, topicId) {
   const s = SUBJECTS[subjectKey];
   const t = s.topics.find(x => x.id === topicId);
   currentSubject = subjectKey; currentTopic = topicId; currentView = 'topic';
+  sessionStorage.setItem('nav_state', JSON.stringify({view:'topic', subject:subjectKey, topic:topicId}));
   updateBreadcrumb([
     {label: s.name, fn: `showSubject('${subjectKey}')`},
     {label: t.name, fn: `showTopic('${subjectKey}','${topicId}')`}
@@ -1182,7 +1185,39 @@ function unlockGame(seconds) {
 // INIT
 // ========================
 document.addEventListener('DOMContentLoaded', () => {
-  showHome();
+  // ---- Chat-Verlauf wiederherstellen ----
+  try {
+    const savedHtml = sessionStorage.getItem('chat_html');
+    if (savedHtml) {
+      document.getElementById('chat-messages').innerHTML = savedHtml;
+    }
+  } catch(e) {}
+
+  // ---- Navigation wiederherstellen ----
+  let restored = false;
+  try {
+    const nav = JSON.parse(sessionStorage.getItem('nav_state') || 'null');
+    if (nav) {
+      if (nav.view === 'subject' && nav.subject) {
+        showSubject(nav.subject);
+        restored = true;
+      } else if (nav.view === 'topic' && nav.subject && nav.topic) {
+        if (nav.subject === 'physik') {
+          showSubject('physik'); // zeigt PhysikHome
+          // kleiner Delay damit DOM bereit ist, dann Topic
+          setTimeout(() => showPhysikTopic(nav.topic), 50);
+        } else {
+          showTopic(nav.subject, nav.topic);
+        }
+        restored = true;
+      } else if (nav.view === 'latin') {
+        showSubject('latein');
+        restored = true;
+      }
+    }
+  } catch(e) {}
+
+  if (!restored) showHome();
   updateRewardIndicator(); // Belohnungs-Timer prüfen beim Start
 });
 
@@ -1227,6 +1262,7 @@ function stopPhysikAnimations() {
 }
 
 function showPhysikHome() {
+  sessionStorage.setItem('nav_state', JSON.stringify({view:'subject', subject:'physik'}));
   const s = SUBJECTS.physik;
   const topics = s.topics;
 
@@ -1258,6 +1294,7 @@ function showPhysikHome() {
 function showPhysikTopic(topicId) {
   stopPhysikAnimations();
   physikCurrentTopicId = topicId;
+  sessionStorage.setItem('nav_state', JSON.stringify({view:'topic', subject:'physik', topic:topicId}));
   const s = SUBJECTS.physik;
   const t = s.topics.find(x => x.id === topicId);
   updateBreadcrumb([
@@ -1969,6 +2006,17 @@ function animWurfPhys(timestamp) {
 const CHAT_API = `http://${location.hostname || '192.168.2.38'}:8767/chat`;
 const chatHistory = []; // Gesprächsverlauf für Kontext
 
+// Chat-Verlauf aus sessionStorage wiederherstellen
+(function restoreChatHistory() {
+  try {
+    const saved = sessionStorage.getItem('chat_history');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      chatHistory.push(...parsed);
+    }
+  } catch(e) {}
+})();
+
 function toggleChat() {
   const win = document.getElementById('chat-window');
   win.classList.toggle('open');
@@ -2025,6 +2073,9 @@ async function sendChat() {
     chatHistory.push({ role: 'user', content: message });
     chatHistory.push({ role: 'assistant', content: data.response });
     if (chatHistory.length > 10) chatHistory.splice(0, 2);
+    // History + Chat-HTML persistieren
+    sessionStorage.setItem('chat_history', JSON.stringify(chatHistory));
+    sessionStorage.setItem('chat_html', document.getElementById('chat-messages').innerHTML);
 
     const botDiv = document.createElement('div');
     botDiv.className = data.forwarded ? 'msg bot forwarded' : 'msg bot';
